@@ -1,0 +1,60 @@
+@import "tailwindcss";
+.history-container {
+  max-width: 1300px;
+  margin: 50px auto;
+  padding: 20px 40px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #374151;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-radius: 20px;
+  box-shadow: 0 8px 20px rgb(100 100 111 / 0.25);
+}
+
+.history-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 2.8rem;
+  margin-bottom: 30px;
+  color: #f3f4f6;
+  text-shadow: 1px 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.chart-card {
+  background: #fff;
+  padding: 30px 35px;
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgb(100 100 111 / 0.3);
+  width: 100%;
+  max-width: 900px;
+  height: 450px;
+  margin: 0 auto 40px auto;
+}
+
+.summary-cards {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  color: #f1efef;
+  font-weight: 600;
+  font-size: 1.25rem;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+}
+
+.summary-cards p {
+  margin: 0;
+}
+
+
+@media (max-width: 640px) {
+  .history-container {
+    padding: 20px;
+  }
+  .summary-cards {
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+  }
+  .chart-card {
+    height: 350px;
+  }
+}
