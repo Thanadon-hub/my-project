@@ -1,0 +1,334 @@
+/* ========== Layout & Background ========== */
+.dashboard {
+  font-family: var(--font-sans);
+  background-color: #2e3e50;
+  color: #111;
+  min-height: 100vh;
+  width: 100vw;
+  background: linear-gradient(135deg, #a1c4fd, #c2e9fb, #fbc2eb); 
+  overflow-x: hidden;
+  margin: 0;
+  padding: 80px 20px 20px; /* เว้น navbar */
+}
+
+/* ========== Module badge ========== */
+.moduleBox {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.moduleText {
+  background: linear-gradient(135deg, #055de2, #14a4cf);
+  color: #f3eeee;
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1.2rem;
+  display: inline-block;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  letter-spacing: 0.5px;
+  transition: all 0.25s ease-in-out;
+  cursor: default;
+}
+
+.moduleText:hover {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+  filter: brightness(1.05);
+}
+
+/* ========== Main content wrapper ========== */
+.mainContentBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* ========== Add / Bind sensor ========== */
+.addSensorBox {
+  display: grid;
+  gap: 10px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 16px;
+  border-radius: 14px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  width: 100%;
+  max-width: 600px;
+}
+
+.input {
+  padding: 10px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.btn {
+  padding: 10px 16px;
+  font-size: 1rem;
+  background-color: #a2e8f5;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.btn--primary {
+  background-color: #4f9cf5;
+  color: #080101;
+  border: none;
+}
+
+.historyButton {
+  padding: 10px 16px;
+  font-size: 1rem;
+  background-color: #28a745;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.25);
+}
+
+.historyButton:hover {
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+}
+
+/* ========== Cards ========== */
+.cardContainer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.noDataMessage {
+  text-align: center;
+  font-size: 1.2rem;
+  color: #444;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 30px;
+  border-radius: 12px;
+}
+
+.card {
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 380px;
+  max-width: 92vw;
+  box-sizing: border-box;
+}
+
+.cardTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #222;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+/* ========== Gauge grid ========== */
+.dataBox {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 4px;
+  width: 100%;
+  justify-items: center;
+  align-items: center;
+}
+
+.bigBox {
+  grid-column: 1 / 4;
+  grid-row: 1 / 2;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.smallBoxLeft {
+  grid-column: 1 / 2;
+  grid-row: 2 / 3;
+  display: flex;
+  justify-content: center;
+}
+
+.smallBoxRight {
+  grid-column: 3 / 4;
+  grid-row: 2 / 3;
+  display: flex;
+  justify-content: center;
+}
+
+/* ========== Location / Map / Buttons ========== */
+.locationBox {
+  font-size: 0.9rem;
+  color: #555;
+  text-align: center;
+  margin-top: 6px;
+}
+
+.coordBox {
+  margin-top: 8px;
+  padding: 10px;
+  width: 100%;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mapButton {
+  display: inline-block;
+  padding: 10px 14px;
+  background-color: #3b82f6;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  box-shadow: 0 3px 8px rgba(59,130,246,0.25);
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.mapButton:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+.mapWrap {
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+}
+
+.mapFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.mapPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* ========== Danger / Delete ========== */
+.deleteButton {
+  background-color: #ff4d4d;
+  color: #fff;
+  border: none;
+  padding: 10px 15px;
+  font-size: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.deleteButton:hover {
+  background-color: #ff3030;
+  transform: translateY(-2px);
+}
+
+/* ========== Battery ========== */
+.batteryBox {
+  margin-top: 10px;
+  width: 100%;
+  font-size: 0.95rem;
+  color: #374151;
+}
+
+.batteryBarOuter {
+  width: 100%;
+  height: 14px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.batteryBarInner {
+  height: 100%;
+  transition: width .3s ease;
+  border-radius: 999px;
+}
+
+/* ========== Modal ========== */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modalCard {
+  width: min(92vw, 480px);
+  background: #fff;
+  color: #111;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  padding: 20px;
+}
+
+.modalLabel {
+  display: block;
+  font-size: 14px;
+  color: #374151;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+/* ========== Responsive tweaks ========== */
+@media (max-width: 640px) {
+  .card { width: 100%; }
+  .coordBox { flex-direction: column; align-items: stretch; }
+  .mainContentBox { gap: 16px; }
+}

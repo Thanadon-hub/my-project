@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   collection,
+  collectionGroup,   // ใช้ดึง MAC จาก history (เฉพาะตอนล็อกอิน)
   onSnapshot,
   query,
   orderBy,
@@ -11,7 +12,6 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
-  collectionGroup, // ใช้ดึง MAC จาก history เฉพาะตอนเปิดโมดอล
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import ReactSpeedometer from 'react-d3-speedometer';
@@ -19,65 +19,93 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import Navbar from '../components/Navbar';
+import './Dashboard.css';
 
 export default function Dashboard() {
-  const { user, userRole, isAdmin, isLoggedIn, hasPermission } = useAuth();
+  // ดึง loading, user, role มาจาก context (สำคัญ!)
+  const { user, userRole, loading, hasPermission } = useAuth();
   const navigate = useNavigate();
 
-  // meta ของอุปกรณ์ (doc ใน sensors) เช่น name, location, latitude, longitude, status
+  // meta sensors
   const [sensorsMeta, setSensorsMeta] = useState([]);
-  // ค่าล่าสุดของแต่ละ MAC จาก history
+  // latest values from history (เฉพาะตอนล็อกอิน)
   const [latestByMac, setLatestByMac] = useState({});
+
+  // ----- Bind modal state -----
   const [showBindModal, setShowBindModal] = useState(false);
   const [selectedMac, setSelectedMac] = useState('');
   const [aliasName, setAliasName] = useState('');
+  const [macsFromHistory, setMacsFromHistory] = useState([]); // รายชื่อ MAC ใน history (เฉพาะล็อกอิน)
 
-  // เพิ่มด้วยการพิมพ์ MAC เอง
   const [manualMac, setManualMac] = useState('');
   const [manualAlias, setManualAlias] = useState('');
-
   const [loadingGPS, setLoadingGPS] = useState(false);
 
-  // รายชื่อ MAC ที่เจอจาก history (ใช้สำหรับโมดอลเท่านั้น)
-  const [macsFromHistory, setMacsFromHistory] = useState([]);
+  const isLoggedIn = !!user;
 
-  // ดึงเอกสารใน sensors (อันที่ถูกผูกแล้วเท่านั้นที่จะไปแสดงการ์ด)
+  // ===== Subscribe sensors (guest/user/admin อ่านได้) =====
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'sensors'), (snap) => {
-      const list = snap.docs.map((d) => ({ mac: d.id, ...d.data() }));
-      setSensorsMeta(list);
-    });
+    const q = query(collection(db, 'sensors'));
+    const unsub = onSnapshot(
+      q,
+      (snap) => setSensorsMeta(snap.docs.map((d) => ({ mac: d.id, ...d.data() }))),
+      (err) => console.error('[sensors:onSnapshot] error:', err)
+    );
     return () => unsub();
   }, []);
 
-  // ดึง MAC จาก collectionGroup('history') — ใช้เฉพาะเพื่อขึ้นตัวเลือกในโมดอล
+  // ===== ดึง MAC จาก history (เฉพาะตอนล็อกอิน + มีสิทธิ์ view_history) =====
   useEffect(() => {
-    // ถ้าติด index ให้สร้าง index ตามลิงก์ error ได้ หรือจะเอา orderBy ออกก็ได้ชั่วคราว
+  if (loading) return;
+  if (!isLoggedIn || !hasPermission('view_history')) {
+    // 🚫 อย่า subscribe ถ้าไม่มีสิทธิ์
+    setMacsFromHistory([]);
+    return;
+  }
+
     const q = query(
       collectionGroup(db, 'history'),
       orderBy('updatedAt', 'desc'),
       limit(500)
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const seen = new Set();
-      snap.docs.forEach((ds) => {
-        const mac = ds.ref.parent?.parent?.id; // path: sensors/{mac}/history/{docId}
-        if (mac) seen.add(mac);
-      });
-      setMacsFromHistory(Array.from(seen));
-    });
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const seen = new Set();
+        snap.docs.forEach((ds) => {
+          const mac = ds.ref.parent?.parent?.id; // sensors/{mac}/history/{docId}
+          if (mac) seen.add(mac);
+        });
+        setMacsFromHistory(Array.from(seen));
+      },
+      (err) => {
+        console.error('[history:list MAC] error (guarded):', err);
+        setMacsFromHistory([]);
+      }
+    );
+
     return () => unsub();
-  }, []);
+  }, [loading, isLoggedIn, userRole]); // ไม่ใส่ hasPermission ใน deps
 
-  // รายชื่อ MAC สำหรับ "การ์ด" เท่านั้น = เฉพาะที่ผูกแล้ว และไม่ถูก archive
-  const macListForCards = useMemo(() => {
-    return sensorsMeta
-      .filter((m) => m.status !== 'archived')
-      .map((m) => m.mac);
-  }, [sensorsMeta]);
+  // รายชื่อ MAC ที่จะโชว์เป็นการ์ด
+  const macListForCards = useMemo(
+    () => sensorsMeta.filter((m) => m.status !== 'archived').map((m) => m.mac),
+    [sensorsMeta]
+  );
 
-  // subscribe เฉพาะค่าล่าสุดของ MAC ที่มีการ์ด
+  // Subscribe history ล่าสุดสำหรับแต่ละ MAC (เฉพาะตอนล็อกอิน + มีสิทธิ์)
   useEffect(() => {
+    if (loading) return;
+    if (!isLoggedIn) {                // guest → ไม่ subscribe history
+      setLatestByMac({});
+      return;
+    }
+    if (!hasPermission('view_history')) {
+      setLatestByMac({});
+      return;
+    }
+
     const unsubs = [];
     macListForCards.forEach((mac) => {
       const qLatest = query(
@@ -85,32 +113,37 @@ export default function Dashboard() {
         orderBy('updatedAt', 'desc'),
         limit(1)
       );
-      const unsub = onSnapshot(qLatest, (snap) => {
-        const docLatest = snap.docs[0];
-        if (!docLatest) return;
-        const d = docLatest.data();
-        setLatestByMac((prev) => ({
-          ...prev,
-          [mac]: {
-            temperature: d.temperature,
-            humidity: d.humidity,
-            dust: d.dust,
-            updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate() : new Date(),
-          },
-        }));
-      });
+      const unsub = onSnapshot(
+        qLatest,
+        (snap) => {
+          const docLatest = snap.docs[0];
+          if (!docLatest) return;
+          const d = docLatest.data();
+          setLatestByMac((prev) => ({
+            ...prev,
+            [mac]: {
+              temperature: d.temperature,
+              humidity: d.humidity,
+              dust: d.dust,
+              updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate() : new Date(),
+            },
+          }));
+        },
+        (err) => console.error(`[history:${mac}] error (guarded):`, err)
+      );
       unsubs.push(unsub);
     });
     return () => unsubs.forEach((u) => u && u());
-  }, [macListForCards]);
+  }, [loading, isLoggedIn, userRole, macListForCards]);
 
+  // lookup meta โดย mac
   const metaByMac = useMemo(() => {
     const map = {};
     sensorsMeta.forEach((m) => (map[m.mac] = m));
     return map;
   }, [sensorsMeta]);
 
-  // รายชื่อ MAC ให้เลือกในโมดอล = union(history ∪ sensors)
+  // รวมรายชื่อ MAC สำหรับโมดอล (union: history ∪ sensors)
   const allMacChoices = useMemo(() => {
     const set = new Set();
     macsFromHistory.forEach((m) => set.add(m));
@@ -118,6 +151,7 @@ export default function Dashboard() {
     return Array.from(set);
   }, [macsFromHistory, sensorsMeta]);
 
+  // ===== Actions =====
   const goHistory = (mac) => {
     if (!hasPermission('view_history')) {
       alert('กรุณาเข้าสู่ระบบเพื่อดูประวัติข้อมูล');
@@ -125,6 +159,39 @@ export default function Dashboard() {
       return;
     }
     navigate(`/history/${encodeURIComponent(mac)}`);
+  };
+
+  const openBindModal = () => {
+    if (!hasPermission('add_sensor')) return;
+    setSelectedMac(allMacChoices[0] || '');
+    setAliasName('');
+    setShowBindModal(true);
+  };
+
+  const handleBindExistingMac = async () => {
+    if (!hasPermission('add_sensor')) {
+      alert('คุณไม่มีสิทธิ์ผูกเครื่อง');
+      return;
+    }
+    if (!selectedMac) {
+      alert('กรุณาเลือก MAC');
+      return;
+    }
+    try {
+      await setDoc(
+        doc(db, 'sensors', selectedMac),
+        {
+          name: aliasName.trim() || selectedMac,
+          updatedAt: serverTimestamp(),
+          status: 'active',
+        },
+        { merge: true }
+      );
+      setShowBindModal(false);
+      alert('✅ ผูกเครื่องเรียบร้อย');
+    } catch (e) {
+      alert('❌ ผูกเครื่องไม่สำเร็จ: ' + e.message);
+    }
   };
 
   const updateLocationFromBrowser = async (mac) => {
@@ -161,54 +228,40 @@ export default function Dashboard() {
     );
   };
 
-  const handleDeleteSensor = async (mac) => {
+
+  const handleArchiveSensor = async (mac) => {
     if (!hasPermission('delete_sensor')) {
-      alert('คุณไม่มีสิทธิ์ลบเครื่อง');
+      alert('คุณไม่มีสิทธิ์เปลี่ยนสถานะเครื่อง');
       return;
     }
-    if (!window.confirm(`ลบเครื่อง ${mac} ?`)) return;
+    if (!window.confirm(`เก็บเข้าคลังเครื่อง ${mac} ?`)) return;
     try {
-      await deleteDoc(doc(db, 'sensors', mac));
-      alert('✅ ลบเครื่องเรียบร้อย');
+      await updateDoc(doc(db, 'sensors', mac), {
+        status: 'archived',
+        updatedAt: serverTimestamp(),
+      });
+      alert('✅ เก็บเข้าคลังเรียบร้อย');
     } catch (e) {
-      alert('❌ เกิดข้อผิดพลาด: ' + e.message);
+      alert('❌ เก็บเข้าคลังไม่สำเร็จ: ' + e.message);
     }
   };
 
-  // ผูกจาก MAC ที่มีอยู่
-  const openBindModal = () => {
-    setSelectedMac(allMacChoices[0] || '');
-    setAliasName('');
-    setShowBindModal(true);
-  };
-
-  const handleBindExistingMac = async () => {
-    if (!hasPermission('add_sensor')) {
-      alert('คุณไม่มีสิทธิ์ผูกเครื่อง');
-      return;
-    }
-    if (!selectedMac) {
-      alert('กรุณาเลือก MAC');
+  const handleRestoreSensor = async (mac) => {
+    if (!hasPermission('delete_sensor')) {
+      alert('คุณไม่มีสิทธิ์เปลี่ยนสถานะเครื่อง');
       return;
     }
     try {
-      await setDoc(
-        doc(db, 'sensors', selectedMac),
-        {
-          name: aliasName.trim() || selectedMac,
-          updatedAt: serverTimestamp(),
-          status: 'active',
-        },
-        { merge: true }
-      );
-      setShowBindModal(false);
-      alert('✅ ผูกเครื่องเรียบร้อย');
+      await updateDoc(doc(db, 'sensors', mac), {
+        status: 'active',
+        updatedAt: serverTimestamp(),
+      });
+      alert('✅ กู้คืนเครื่องเรียบร้อย');
     } catch (e) {
-      alert('❌ ผูกเครื่องไม่สำเร็จ: ' + e.message);
+      alert('❌ กู้คืนไม่สำเร็จ: ' + e.message);
     }
   };
 
-  // เพิ่มด้วยการพิมพ์ MAC เอง
   const handleAddByManualMac = async () => {
     if (!hasPermission('add_sensor')) {
       alert('คุณไม่มีสิทธิ์เพิ่มเครื่อง');
@@ -238,57 +291,51 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      navigate('/');
-    } catch {
-      alert('ออกจากระบบไม่สำเร็จ');
-    }
-  };
-
+  // ===== Render =====
   return (
-    <div style={styles.background}>
-      <Navbar user={user} userRole={userRole} onLogout={handleLogout} />
+    <div className="dashboard">
+      <Navbar user={user} userRole={userRole} onLogout={async () => {
+        try { await signOut(auth); navigate('/'); } catch { alert('ออกจากระบบไม่สำเร็จ'); }
+      }} />
 
-      <div style={styles.moduleBox}>
-        <span style={styles.moduleText}>Module Dashboard</span>
+      <div className="moduleBox">
+        <span className="moduleText">Module Dashboard</span>
       </div>
 
-      <div style={styles.mainContentBox}>
-        {/* กล่องเพิ่ม/ผูกเครื่อง */}
+      <div className="mainContentBox">
+        {/* กล่องเพิ่ม/ผูกเครื่อง — เฉพาะ admin */}
         {hasPermission('add_sensor') && (
-          <div style={styles.addSensorBox}>
+          <div className="addSensorBox">
             <div style={{ fontWeight: 700, marginBottom: 6 }}>เพิ่ม/ผูกเครื่อง</div>
 
-            {/* ปุ่มผูกจาก MAC ที่มีอยู่แล้ว */}
-            <button onClick={openBindModal} style={{ ...styles.button, backgroundColor: '#4f9cf5', color: '#fff' }}>
+            {/* ปุ่มผูกจาก MAC ที่มีอยู่ */}
+            <button onClick={openBindModal} className="btn btn--primary" style={{ marginBottom: 8 }}>
               🔗 ผูกเครื่องจาก MAC ที่มีอยู่
             </button>
 
             {/* เพิ่มด้วยการพิมพ์ MAC เอง */}
-            <div style={{ marginTop: 10, width: '100%', display: 'grid', gap: 8 }}>
-              <input
-                value={manualMac}
-                onChange={(e) => setManualMac(e.target.value)}
-                placeholder="กรอก MAC (เช่น E4:65:...)"
-                style={styles.input}
-              />
-              <input
-                value={manualAlias}
-                onChange={(e) => setManualAlias(e.target.value)}
-                placeholder="ตั้งชื่อเล่น (ไม่บังคับ)"
-                style={styles.input}
-              />
-              <button onClick={handleAddByManualMac} style={styles.button}>➕ เพิ่ม/ผูกด้วย MAC ที่พิมพ์</button>
-            </div>
+            <input
+              value={manualMac}
+              onChange={(e) => setManualMac(e.target.value)}
+              placeholder="กรอก MAC (เช่น E4:65:...)"
+              className="input"
+            />
+            <input
+              value={manualAlias}
+              onChange={(e) => setManualAlias(e.target.value)}
+              placeholder="ตั้งชื่อเล่น (ไม่บังคับ)"
+              className="input"
+            />
+            <button onClick={handleAddByManualMac} className="btn">
+              ➕ เพิ่ม/ผูกด้วย MAC ที่พิมพ์
+            </button>
           </div>
         )}
 
-        {/* การ์ดอุปกรณ์: เฉพาะที่ผูกแล้ว */}
-        <div style={styles.cardContainer}>
+        {/* การ์ดอุปกรณ์ */}
+        <div className="cardContainer">
           {macListForCards.length === 0 ? (
-            <div style={styles.noDataMessage}>📭 ยังไม่พบอุปกรณ์</div>
+            <div className="noDataMessage">📭 ยังไม่พบอุปกรณ์</div>
           ) : (
             macListForCards.map((mac) => {
               const meta = metaByMac[mac] || {};
@@ -297,14 +344,19 @@ export default function Dashboard() {
               const lat = fmtCoord(meta.latitude);
               const lng = fmtCoord(meta.longitude);
 
-              return (
-                <div key={mac} style={styles.card}>
-                  <h3 style={styles.cardTitle}>{displayName}</h3>
+              // guest → ใช้ meta; logged-in → ใช้ history ล่าสุด
+              const showTemp = isLoggedIn ? latest?.temperature : meta.temperature;
+              const showDust = isLoggedIn ? latest?.dust : meta.dust;
+              const showHum = isLoggedIn ? latest?.humidity : meta.humidity;
 
-                  <div style={styles.dataBox}>
-                    <div style={styles.smallBoxLeft}>
+              return (
+                <div key={mac} className="card">
+                  <h3 className="cardTitle">{displayName}</h3>
+
+                  <div className="dataBox">
+                    <div className="smallBoxLeft">
                       <ReactSpeedometer
-                        value={toNum(latest?.temperature)}
+                        value={toNum(showTemp)}
                         maxValue={50}
                         segments={5}
                         needleColor="black"
@@ -313,13 +365,13 @@ export default function Dashboard() {
                         height={120}
                         width={160}
                         ringWidth={20}
-                        currentValueText={`อุณหภูมิ: ${fmt(latest?.temperature)}°C`}
+                        currentValueText={`อุณหภูมิ: ${fmt(showTemp)}°C`}
                       />
                     </div>
 
-                    <div style={styles.bigBox}>
+                    <div className="bigBox">
                       <ReactSpeedometer
-                        value={toNum(latest?.dust)}
+                        value={toNum(showDust)}
                         maxValue={250}
                         segments={5}
                         needleColor="gray"
@@ -328,13 +380,13 @@ export default function Dashboard() {
                         height={160}
                         width={200}
                         ringWidth={20}
-                        currentValueText={`ฝุ่น: ${fmt(latest?.dust)} µg/m³`}
+                        currentValueText={`ฝุ่น: ${fmt(showDust)} µg/m³`}
                       />
                     </div>
 
-                    <div style={styles.smallBoxRight}>
+                    <div className="smallBoxRight">
                       <ReactSpeedometer
-                        value={toNum(latest?.humidity)}
+                        value={toNum(showHum)}
                         maxValue={100}
                         segments={5}
                         needleColor="orange"
@@ -343,75 +395,68 @@ export default function Dashboard() {
                         height={120}
                         width={160}
                         ringWidth={20}
-                        currentValueText={`ความชื้น: ${fmt(latest?.humidity)}%`}
+                        currentValueText={`ความชื้น: ${fmt(showHum)}%`}
                       />
                     </div>
                   </div>
 
-                  {/* Battery */}
-                  <div style={styles.batteryBox}>
+                  {/* Battery & Location */}
+                  <div className="batteryBox">
                     🔋 Battery: <b>{typeof meta.battery === 'number' ? `${meta.battery}%` : '—'}</b>
-                    <div style={styles.batteryBarOuter}>
-                      <div
-                        style={{
-                          ...styles.batteryBarInner,
-                          width: `${typeof meta.battery === 'number' ? meta.battery : 0}%`,
-                          backgroundColor:
-                            meta.battery > 50 ? '#22c55e' : meta.battery > 20 ? '#f59e0b' : '#ef4444',
-                        }}
-                      />
-                    </div>
                   </div>
 
-                  {/* พิกัด + ปุ่ม */}
-                  <div style={styles.coordBox}>
+                  <div className="coordBox">
                     <div>
                       <div>📍 ตำแหน่ง: {meta.location || 'ไม่ระบุ'}</div>
-                      <div style={{ marginTop: 4, color: '#374151' }}>
-                        {lat && lng ? (
-                          <>Lat: <b>{lat}</b>, Lng: <b>{lng}</b></>
-                        ) : (
-                          <i>ยังไม่มีพิกัด</i>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {lat && lng && (
-                        <a
-                          href={mapUrl(meta.latitude, meta.longitude)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={styles.mapButton}
-                          title="เปิดใน Google Maps"
-                        >
-                          🗺️ เปิดแผนที่
-                        </a>
-                      )}
-                      {hasPermission('update_location') && (
-                        <button
-                          onClick={() => updateLocationFromBrowser(mac)}
-                          style={styles.button}
-                          disabled={loadingGPS}
-                          title="อัปเดตพิกัดจากเบราว์เซอร์ของคุณ"
-                        >
-                          {loadingGPS ? '📍 กำลังดึงพิกัด...' : '📍 ดึงตำแหน่งจากเบราว์เซอร์'}
-                        </button>
+                        <div style={{ marginTop: 4, color: '#374151' }}>
+                          Lat: <b>{lat}</b>, Lng: <b>{lng}</b>
+                        </div>
                       )}
                     </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 10, flexWrap: 'wrap' }}>
-                    <button onClick={() => goHistory(mac)} style={styles.historyButton}>📊 ดูกราฟย้อนหลัง</button>
-                    {hasPermission('delete_sensor') && (
-                      <button style={styles.deleteButton} onClick={() => handleDeleteSensor(mac)}>
-                        🗑️ ลบเครื่อง
-                      </button>
+                    {lat && lng && (
+                      <a
+                        href={mapUrl(meta.latitude, meta.longitude)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mapButton"
+                        title="เปิดใน Google Maps"
+                      >
+                        🗺️ เปิดแผนที่
+                      </a>
                     )}
                   </div>
 
-                  <div style={styles.locationBox}>
-                    ⏱ อัปเดตล่าสุด: {latest?.updatedAt ? latest.updatedAt.toLocaleString() : '—'}
+                  {/* ปุ่มตามสิทธิ์ */}
+                  <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 10, flexWrap: 'wrap' }}>
+                    {hasPermission('view_history') && (
+                      <button onClick={() => goHistory(mac)} className="historyButton">
+                        📊 ดูกราฟย้อนหลัง
+                      </button>
+                    )}
+                    {hasPermission('update_location') && (
+                      <button
+                        onClick={() => updateLocationFromBrowser(mac)}
+                        className="btn"
+                        disabled={loadingGPS}
+                        title="อัปเดตพิกัดจากเบราว์เซอร์ของคุณ"
+                      >
+                        {loadingGPS ? '📍 กำลังดึงพิกัด...' : '📍 อัปเดตพิกัด'}
+                      </button>
+                    )}
+                    {hasPermission('delete_sensor') && (
+                      <button className="deleteButton" onClick={() => handleArchiveSensor(mac)}>
+                        📦 เก็บเข้าคลัง
+                      </button>
+                    )}
+
+                  </div>
+
+                  <div className="locationBox">
+                    ⏱ อัปเดตล่าสุด:{' '}
+                    {isLoggedIn
+                      ? latest?.updatedAt?.toLocaleString() || '—'
+                      : meta.updatedAt?.toDate?.().toLocaleString() || '—'}
                   </div>
                 </div>
               );
@@ -420,39 +465,40 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* โมดอลผูกจาก MAC ที่มีอยู่ */}
-      {showBindModal && (
-        <div style={styles.modalBackdrop}>
-          <div style={styles.modalCard}>
+      {/* ===== โมดอลผูก MAC ที่มีอยู่ (เฉพาะ admin) ===== */}
+      {showBindModal && hasPermission('add_sensor') && (
+        <div className="modalBackdrop">
+          <div className="modalCard">
             <h3 style={{ marginTop: 0 }}>ผูกเครื่องจาก MAC ที่มีอยู่</h3>
+
             {allMacChoices.length === 0 ? (
-              <div style={{ marginBottom: 12 }}>ยังไม่พบ MAC ใดๆ ในระบบ</div>
+              <div style={{ marginBottom: 12 }}>ยังไม่พบ MAC ใด ๆ ในระบบ</div>
             ) : (
               <>
-                <label style={styles.modalLabel}>เลือก MAC</label>
+                <label className="modalLabel">เลือก MAC</label>
                 <select
                   value={selectedMac}
                   onChange={(e) => setSelectedMac(e.target.value)}
-                  style={styles.select}
+                  className="select"
                 >
                   {allMacChoices.map((mac) => (
                     <option key={mac} value={mac}>{mac}</option>
                   ))}
                 </select>
 
-                <label style={styles.modalLabel}>ตั้งชื่อ (ไม่บังคับ)</label>
+                <label className="modalLabel">ตั้งชื่อ (ไม่บังคับ)</label>
                 <input
                   value={aliasName}
                   onChange={(e) => setAliasName(e.target.value)}
                   placeholder="เช่น ห้อง Lab ชั้น 2"
-                  style={styles.input}
+                  className="input"
                 />
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                  <button onClick={handleBindExistingMac} style={{ ...styles.button, backgroundColor: '#10b981', color: '#fff' }}>
+                  <button onClick={handleBindExistingMac} className="btn btn--primary">
                     ✅ ผูกเครื่อง
                   </button>
-                  <button onClick={() => setShowBindModal(false)} style={{ ...styles.button, backgroundColor: '#e5e7eb' }}>
+                  <button onClick={() => setShowBindModal(false)} className="btn" style={{ background: '#e5e7eb', border: 'none' }}>
                     ยกเลิก
                   </button>
                 </div>
@@ -465,7 +511,7 @@ export default function Dashboard() {
   );
 }
 
-// ===== utils =====
+/* ===== utils ===== */
 function toNum(n) {
   return typeof n === 'number' && !Number.isNaN(n) ? n : 0;
 }
@@ -478,261 +524,3 @@ function fmtCoord(n) {
 function mapUrl(lat, lng) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
 }
-const styles = {
-  background: {
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
-    backgroundColor: '#2e3e50',
-    color: '#111',
-    minHeight: '100vh',
-    width: '100vw',
-    backgroundImage: "url('/ss.jpg')",
-    backgroundSize: 'cover',
-    backgroundPosition: 'center center',
-    backgroundRepeat: 'no-repeat',
-    backgroundAttachment: 'scroll',
-    overflowX: 'hidden',
-    margin: 0,
-    paddingTop: '80px', // เว้น navbar
-    paddingLeft: '20px',
-    paddingRight: '20px',
-    paddingBottom: '20px',
-  },
-  moduleBox: { textAlign: 'center', marginBottom: '12px' },
-  moduleText: {
-    backgroundColor: '#aeeeee',
-    color: '#1a1a1a',
-    padding: '8px 20px',
-    borderRadius: '10px',
-    fontWeight: 'bold',
-    fontSize: '1.2rem',
-    display: 'inline-block',
-  },
-  mainContentBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '20px',
-    width: '100%',
-    maxWidth: 1400,
-    margin: '0 auto',
-    boxSizing: 'border-box',
-    overflowX: 'hidden',
-    overflowY: 'auto', // ให้เลื่อนลงได้
-  },
-  addSensorBox: {
-    display: 'grid',
-    gap: '10px',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: '16px',
-    borderRadius: '14px',
-    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-    width: '100%',
-    maxWidth: 600,
-  },
-  input: {
-    padding: '10px',
-    fontSize: '1rem',
-    borderRadius: '8px',
-    border: '1px solid #d1d5db',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
-  button: {
-    padding: '10px 16px',
-    fontSize: '1rem',
-    backgroundColor: '#a2e8f5',
-    color: '#000',
-    border: '2px solid #000',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  },
-  historyButton: {
-    padding: '10px 16px',
-    fontSize: '1rem',
-    backgroundColor: '#28a745',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    boxShadow: '0 4px 8px rgba(40, 167, 69, 0.25)',
-  },
-  cardContainer: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: '20px',
-    width: '100%',
-    padding: '10px',
-    boxSizing: 'border-box',
-  },
-  noDataMessage: {
-    textAlign: 'center',
-    fontSize: '1.2rem',
-    color: '#444',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: '30px',
-    borderRadius: '12px',
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: '12px',
-    padding: '18px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '10px',
-    width: '380px',
-    maxWidth: '92vw',
-    boxSizing: 'border-box',
-  },
-  cardTitle: {
-    fontSize: '1.2rem',
-    fontWeight: '700',
-    color: '#222',
-    marginBottom: '6px',
-    textAlign: 'center',
-  },
-  dataBox: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gridTemplateRows: 'auto auto',
-    columnGap: '10px',
-    rowGap: '4px',
-    width: '100%',
-    justifyItems: 'center',
-    alignItems: 'center',
-  },
-  bigBox: {
-    gridColumn: '1 / 4',
-    gridRow: '1 / 2',
-    width: '100%',
-    display: 'flex',
-    justifyContent: 'center',
-  },
-  smallBoxLeft: {
-    gridColumn: '1 / 2',
-    gridRow: '2 / 3',
-    display: 'flex',
-    justifyContent: 'center',
-  },
-  smallBoxRight: {
-    gridColumn: '3 / 4',
-    gridRow: '2 / 3',
-    display: 'flex',
-    justifyContent: 'center',
-  },
-  locationBox: {
-    fontSize: '0.9rem',
-    color: '#555',
-    textAlign: 'center',
-    marginTop: '6px',
-  },
-  coordBox: {
-    marginTop: '8px',
-    padding: '10px',
-    width: '100%',
-    borderRadius: 10,
-    background: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  mapButton: {
-    display: 'inline-block',
-    padding: '10px 14px',
-    backgroundColor: '#3b82f6',
-    color: '#fff',
-    textDecoration: 'none',
-    borderRadius: 10,
-    fontSize: '0.95rem',
-    boxShadow: '0 3px 8px rgba(59,130,246,0.25)',
-  },
-  mapWrap: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    overflow: 'hidden',
-    border: '1px solid #e5e7eb',
-    background: '#f3f4f6',
-  },
-  mapFrame: {
-    width: '100%',
-    height: '100%',
-    border: 0,
-  },
-  mapPlaceholder: {
-    width: '100%',
-    height: '100%',
-    display: 'grid',
-    placeItems: 'center',
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  deleteButton: {
-    backgroundColor: '#ff4d4d',
-    color: '#fff',
-    border: 'none',
-    padding: '10px 15px',
-    fontSize: '1rem',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
-  },
-  // Modal
-  modalBackdrop: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.45)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-  modalCard: {
-    width: 'min(92vw, 480px)',
-    background: '#fff',
-    color: '#111',
-    borderRadius: 16,
-    boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
-    padding: 20,
-  },
-  modalLabel: {
-    display: 'block',
-    fontSize: 14,
-    color: '#374151',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  select: {
-    width: '100%',
-    padding: '10px',
-    borderRadius: 8,
-    border: '1px solid #d1d5db',
-    background: '#fff',
-  },
-  batteryBox: {
-    marginTop: 10,
-    width: '100%',
-    fontSize: '0.95rem',
-    color: '#374151',
-  },
-  batteryBarOuter: {
-    width: '100%',
-    height: 14,
-    background: '#e5e7eb',
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginTop: 6,
-  },
-  batteryBarInner: {
-    height: '100%',
-    transition: 'width .3s ease',
-    borderRadius: 999,
-  },
-};

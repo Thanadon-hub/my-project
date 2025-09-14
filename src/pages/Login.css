@@ -96,3 +96,38 @@ body {
     transform: translateY(0);
   }
 }
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #999;
+  margin: 16px 0;
+}
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.social-buttons {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.btn-social {
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-google { background: #fff; color: #111; border: 1px solid #e5e7eb; }
+.btn-github { background: #111; color: #fff; }
+.btn-facebook { background: #1877F2; color: #fff; }
+.btn-social:disabled { opacity: .6; cursor: not-allowed; }

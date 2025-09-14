@@ -1,10 +1,14 @@
 // components/Navbar.jsx
 import React from "react";
+import './buttons.css';
 
 export default function Navbar({ user, userRole, onLogout }) {
   return (
     <div style={styles.navbar}>
       <div style={styles.left}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style={styles.logo}>
+          <path d="M13 2L3 14h7l-1 8 11-14h-7l0-6z" />
+        </svg>
         <h1 style={styles.title}>Electrostatic Dashboard</h1>
       </div>
       <div style={styles.right}>
@@ -14,17 +18,10 @@ export default function Navbar({ user, userRole, onLogout }) {
               <span style={styles.roleBadge}>{userRole || "member"}</span>
               <span style={styles.email}>{user.email}</span>
             </div>
-            <button onClick={onLogout} style={styles.logoutButton}>
-              ออกจากระบบ
-            </button>
+            <button onClick={onLogout} className="btn btn-logout">ออกจากระบบ</button>
           </>
         ) : (
-          <button
-            onClick={() => window.location.href = '/login'}
-            style={styles.loginButton}
-          >
-            เข้าสู่ระบบ
-          </button>
+          <button onClick={() => window.location.href='/login'} className="btn btn-login">เข้าสู่ระบบ</button>
         )}
       </div>
     </div>
@@ -93,6 +90,7 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     transition: "filter .2s",
+    ":hover": { filter: "brightness(90%)" }
   },
   loginButton: {
     backgroundColor: "#28a745",

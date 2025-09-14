@@ -12,30 +12,39 @@ export function useAuth() {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  const [userRole, setUserRole] = useState("guest"); // default เป็น guest
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          const ref = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(ref);
+
           if (userDoc.exists()) {
             const userData = userDoc.data();
             setUser(user);
             setUserRole(userData.role || 'user');
           } else {
             setUser(user);
-            setUserRole('user');
+            setUserRole('user'); // fallback ถ้าไม่มี document
           }
         } catch (error) {
-          console.error('Error fetching user role:', error);
-          setUser(user);
-          setUserRole('user');
+          if (error.code === "permission-denied") {
+            // กรณี rules ไม่ allow → fallback เป็น user เฉย ๆ ไม่ต้อง spam error
+            console.warn(`No permission to read /users/${user.uid}, fallback to role=user`);
+            setUser(user);
+            setUserRole('user');
+          } else {
+            console.error('Error fetching user role:', error);
+            setUser(user);
+            setUserRole('user');
+          }
         }
       } else {
         setUser(null);
-        setUserRole(null);
+        setUserRole('guest'); // guest mode
       }
       setLoading(false);
     });
@@ -43,26 +52,21 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  const isAdmin = () => userRole === 'admin';
-  const isUser = () => userRole === 'user';
-  const isLoggedIn = () => user !== null;
+  const isAdmin = userRole === 'admin';
+  const isUser = userRole === 'user';
+  const isLoggedIn = user !== null;
 
   const hasPermission = (permission) => {
     const permissions = {
-      'view_data': ['admin', 'user', null], // รวมคนไม่ล็อกอินด้วย
-      'view_history': ['admin', 'user'],    // ต้องล็อกอิน
-      'add_sensor': ['admin'],               // admin เท่านั้น
-      'delete_sensor': ['admin'],            // admin เท่านั้น
-      'update_location': ['admin'],          // admin เท่านั้น
+      view_data: ['admin', 'user', 'guest'], // guest ก็อ่าน sensors ได้
+      view_history: ['admin', 'user'],       // ต้องล็อกอิน
+      add_sensor: ['admin'],
+      delete_sensor: ['admin'],
+      update_location: ['admin'],
     };
 
     const allowedRoles = permissions[permission];
     if (!allowedRoles) return false;
-
-    if (!user) {
-      return allowedRoles.includes(null);
-    }
-
     return allowedRoles.includes(userRole);
   };
 
@@ -73,7 +77,7 @@ export function AuthProvider({ children }) {
     isAdmin,
     isUser,
     isLoggedIn,
-    hasPermission
+    hasPermission,
   };
 
   return (
@@ -82,4 +86,5 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
+
 export default AuthProvider;
